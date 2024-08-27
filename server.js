@@ -19,6 +19,24 @@ app.use(express.json({ extended: false }));
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
 
+app.get('/api/active-chats', async (req, res) => {
+    try {
+        const activeChats = await Message.aggregate([
+            { $sort: { createdAt: -1 } },  // Sort by the latest message
+            { $group: {
+                _id: "$chatId",
+                lastMessage: { $first: "$message" },
+                senderId: { $first: "$senderId" },
+                senderRole: { $first: "$senderRole" }
+            }}
+        ]).exec();
+
+        res.json(activeChats);
+    } catch (error) {
+        console.error('Error fetching active chats:', error);
+        res.status(500).send('Server Error');
+    }
+});
 
 
 // Create server and initialize Socket.IO
@@ -34,18 +52,26 @@ const io = socketIo(server, {
 io.on('connection', (socket) => {
     console.log('New client connected');
 
-    socket.on('joinChat', (chatId) => {
+    socket.on('joinChat', async (chatId) => {
         socket.join(chatId);
         console.log(`Client joined chat: ${chatId}`);
+
+        // Fetch previous messages from the database
+        try {
+            const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
+            socket.emit('chatHistory', messages);
+        } catch (error) {
+            console.error('Error fetching chat history:', error);
+        }
     });
 
     socket.on('sendMessage', async (data) => {
-        const { chatId, sender, message } = data;
+        const { chatId, senderId, senderRole, message } = data;
 
         console.log('Received sendMessage event:', data);
 
         try {
-            const newMessage = new Message({ chatId, sender, message });
+            const newMessage = new Message({ chatId, senderId, senderRole, message });
             await newMessage.save();
 
             console.log('Message saved to MongoDB:', newMessage);
