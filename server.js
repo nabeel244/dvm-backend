@@ -6,6 +6,7 @@ const socketIo = require('socket.io');
 require('dotenv').config();
 const cors = require('cors');
 const Message = require('./models/Message');
+const Booth = require('./models/Booth');
 
 const app = express();
 
@@ -18,6 +19,9 @@ app.use(express.json({ extended: false }));
 
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/chat' , require('./routes/chat'));
+
+
 
 app.get('/api/active-chats', async (req, res) => {
     try {
