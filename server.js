@@ -31,7 +31,8 @@ app.get('/api/active-chats', async (req, res) => {
                 _id: "$chatId",
                 lastMessage: { $first: "$message" },
                 senderId: { $first: "$senderId" },
-                senderRole: { $first: "$senderRole" }
+                senderRole: { $first: "$senderRole" },
+                createdAt: { $first: "$createdAt" } 
             }}
         ]).exec();
 
@@ -52,45 +53,8 @@ const io = socketIo(server, {
     }
 });
 
-// Handle Socket.IO connections
-// io.on('connection', (socket) => {
-//     console.log('New client connected');
+app.set('socketio', io);
 
-//     socket.on('joinChat', async (chatId) => {
-//         socket.join(chatId);
-//         console.log(`Client joined chat: ${chatId}`);
-
-//         // Fetch previous messages from the database
-//         try {
-//             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
-//             socket.emit('chatHistory', messages);
-//         } catch (error) {
-//             console.error('Error fetching chat history:', error);
-//         }
-//     });
-
-//     socket.on('sendMessage', async (data) => {
-//         const { chatId, senderId, senderRole, message } = data;
-
-//         console.log('Received sendMessage event:', data);
-
-//         try {
-//             const newMessage = new Message({ chatId, senderId, senderRole, message });
-//             await newMessage.save();
-
-//             console.log('Message saved to MongoDB:', newMessage);
-
-//             io.to(chatId).emit('receiveMessage', newMessage);
-//             console.log('Message emitted to chat:', chatId);
-//         } catch (error) {
-//             console.error('Error saving message or emitting event:', error);
-//         }
-//     });
-
-//     socket.on('disconnect', () => {
-//         console.log('Client disconnected');
-//     });
-// });
 
 io.on('connection', (socket) => {
     console.log('New client connected');
@@ -123,6 +87,10 @@ io.on('connection', (socket) => {
             // Emit the message to all clients in the chat room, including the name
             io.to(chatId).emit('receiveMessage', newMessage);
             console.log('Message emitted to chat:', chatId);
+            io.emit('newMessageNotification', {
+                // message: `New message from ${name}: "${message}"`,
+                messageChat: `New message from ${name}`,
+            });
         } catch (error) {
             console.error('Error saving message or emitting event:', error);
         }
