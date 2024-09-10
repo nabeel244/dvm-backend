@@ -10,7 +10,8 @@ const BoothHistorySchema = new mongoose.Schema({
             answer: { type: String },
             timestamp: { type: Date, default: Date.now }
         }
-    ]
+    ],
+    timestamp: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('Booth', BoothHistorySchema);

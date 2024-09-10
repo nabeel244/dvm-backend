@@ -48,7 +48,7 @@ router.post('/saveboothistory', async (req, res) => {
 
 router.get('/getboothistory', async (req, res) => {
     try {
-        const boothHistories = await Booth.find();
+        const boothHistories = await Booth.find().sort({ timestamp: -1 });
         res.status(200).json(boothHistories);
     } catch (error) {
         console.error('Error fetching booth history:', error);
