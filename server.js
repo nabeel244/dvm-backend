@@ -7,6 +7,7 @@ require('dotenv').config();
 const cors = require('cors');
 const Message = require('./models/Message');
 const Booth = require('./models/Booth');
+const ChatForm = require('./models/ChatForm');
 
 const app = express();
 
@@ -59,40 +60,60 @@ app.set('socketio', io);
 io.on('connection', (socket) => {
     console.log('New client connected');
 
-    socket.on('joinChat', async (chatId) => {
-        socket.join(chatId);
-        console.log(`Client joined chat: ${chatId}`);
-
-        // Fetch previous messages from the database
+    // When the user joins the chat based on their email from localStorage
+    socket.on('joinChat', async (email) => {
         try {
+            console.log(email, 'emaillll')
+            // Check if the user already has a chat form in the database based on email
+            let chatForm = await ChatForm.findOne({ email });
+            const chatId = chatForm.chatId;
+            socket.join(chatId);
+            console.log(`Client with email ${email} joined chat: ${chatId}`);
+
+            // Fetch previous messages for this chatId
             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
             socket.emit('chatHistory', messages);
         } catch (error) {
-            console.error('Error fetching chat history:', error);
+            console.error('Error joining chat:', error);
         }
     });
 
+    socket.on('joinAdminChat', async (chatId) => {
+        try {
+            if (!chatId) {
+                console.log('Admin attempted to join with no chatId');
+                return;
+            }
+
+            socket.join(chatId);
+            console.log(`Admin joined chat: ${chatId}`);
+
+            // Fetch previous messages for this chatId
+            const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
+            socket.emit('chatHistory', messages);  // Send chat history to the admin
+        } catch (error) {
+            console.error('Error joining admin chat:', error);
+        }
+    });
+
+    // Handling message sending
     socket.on('sendMessage', async (data) => {
         const { chatId, senderId, senderRole, message, name } = data;
 
-        console.log('Received sendMessage event:', data);
-
         try {
-            // Save the message along with the sender's name
+            // Save the message along with the chatId and sender's name
             const newMessage = new Message({ chatId, senderId, senderRole, message, name });
             await newMessage.save();
 
-            console.log('Message saved to MongoDB:', newMessage);
-
-            // Emit the message to all clients in the chat room, including the name
+            // Emit the message to all clients in the same chat room
             io.to(chatId).emit('receiveMessage', newMessage);
-            console.log('Message emitted to chat:', chatId);
+
+            // Optionally, notify admin or other users (you can customize this)
             io.emit('newMessageNotification', {
-                // message: `New message from ${name}: "${message}"`,
                 messageChat: `New message from ${name}`,
             });
         } catch (error) {
-            console.error('Error saving message or emitting event:', error);
+            console.error('Error sending message:', error);
         }
     });
 
@@ -100,6 +121,55 @@ io.on('connection', (socket) => {
         console.log('Client disconnected');
     });
 });
+
+
+// io.on('connection', (socket) => {
+//     console.log('New client connected');
+
+//     socket.on('joinChat', async (chatId) => {
+//         socket.join(chatId);
+//         console.log(`Client joined chat: ${chatId}`);
+
+//         // Fetch previous messages from the database
+//         try {
+//             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
+//             socket.emit('chatHistory', messages);
+//         } catch (error) {
+//             console.error('Error fetching chat history:', error);
+//         }
+//     });
+
+//     socket.on('sendMessage', async (data) => {
+//         const { chatId, senderId, senderRole, message, name } = data;
+
+//         console.log('Received sendMessage event:', data);
+
+//         try {
+//             // Save the message along with the sender's name
+//             const newMessage = new Message({ chatId, senderId, senderRole, message, name });
+//             await newMessage.save();
+
+//             console.log('Message saved to MongoDB:', newMessage);
+
+//             // Emit the message to all clients in the chat room, including the name
+//             io.to(chatId).emit('receiveMessage', newMessage);
+//             console.log('Message emitted to chat:', chatId);
+//             io.emit('newMessageNotification', {
+//                 // message: `New message from ${name}: "${message}"`,
+//                 messageChat: `New message from ${name}`,
+//             });
+//         } catch (error) {
+//             console.error('Error saving message or emitting event:', error);
+//         }
+//     });
+
+//     socket.on('disconnect', () => {
+//         console.log('Client disconnected');
+//     });
+// });
+
+
+
 
 
 

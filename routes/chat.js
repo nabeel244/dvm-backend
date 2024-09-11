@@ -55,28 +55,59 @@ router.get('/getboothistory', async (req, res) => {
         res.status(500).json({ msg: 'Internal server error' });
     }
 });
-
 router.post('/save-chat-form', async (req, res) => {
     try {
         const io = req.app.get('socketio');
-        const { firstName, lastName, phoneNumber, email, chatId } = req.body;
+        const { firstName, lastName, phoneNumber, email } = req.body;
+
+        // Generate chatId based on the email if it's not provided in the request
+        const chatId = `${email}`; // This generates a unique chatId based on the user's email
+        console.log(chatId, 'Generated chatId');
 
         // Check if the form data is valid
-        if (!firstName || !lastName || !phoneNumber || !email || !chatId) {
+        if (!firstName || !lastName || !phoneNumber || !email) {
             return res.status(400).json({ message: 'All fields are required' });
         }
+
+        // Save the form data along with the generated chatId
         const newChatForm = new ChatForm({ firstName, lastName, phoneNumber, email, chatId });
         await newChatForm.save();
+
+        // Emit a notification to the socket
         io.emit('newChatFormNotification', {
             message: `New Chat form submitted by ${firstName}`
         });
 
-        res.status(200).json({ message: 'Chat form information saved successfully' });
+        // Respond with the generated chatId so the frontend can use it
+        res.status(200).json({ message: 'Chat form information saved successfully', chatId });
     } catch (error) {
         console.error('Error saving chat form information:', error);
         res.status(500).json({ message: 'Server error' });
     }
 });
+
+
+// router.post('/save-chat-form', async (req, res) => {
+//     try {
+//         const io = req.app.get('socketio');
+//         const { firstName, lastName, phoneNumber, email, chatId } = req.body;
+//         console.log(chatId, 'chat id')
+//         // Check if the form data is valid
+//         if (!firstName || !lastName || !phoneNumber || !email || !chatId) {
+//             return res.status(400).json({ message: 'All fields are required' });
+//         }
+//         const newChatForm = new ChatForm({ firstName, lastName, phoneNumber, email, chatId });
+//         await newChatForm.save();
+//         io.emit('newChatFormNotification', {
+//             message: `New Chat form submitted by ${firstName}`
+//         });
+
+//         res.status(200).json({ message: 'Chat form information saved successfully' });
+//     } catch (error) {
+//         console.error('Error saving chat form information:', error);
+//         res.status(500).json({ message: 'Server error' });
+//     }
+// });
 
 router.get('/get-chat-forms', async (req, res) => {
     try {
