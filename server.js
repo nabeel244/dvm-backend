@@ -22,27 +22,82 @@ app.use(express.json({ extended: false }));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/chat' , require('./routes/chat'));
 
-
-
 app.get('/api/active-chats', async (req, res) => {
     try {
         const activeChats = await Message.aggregate([
-            { $sort: { createdAt: -1 } },  // Sort by the latest message
+            // Stage 1: Get the most recent message per chatId
+            { $sort: { createdAt: -1 } },
             { $group: {
                 _id: "$chatId",
                 lastMessage: { $first: "$message" },
                 senderId: { $first: "$senderId" },
                 senderRole: { $first: "$senderRole" },
-                createdAt: { $first: "$createdAt" } 
-            }}
+                createdAt: { $first: "$createdAt" },
+                name: { $first: "$name" }  // Get name from the most recent message
+            }},
+            
+            // Stage 2: Get the name from any user message in the group if the name is missing
+            {
+                $lookup: {
+                    from: 'messages', // Assuming the same collection name as 'Message'
+                    let: { chatId: "$_id" },
+                    pipeline: [
+                        { $match: {
+                            $expr: { $and: [
+                                { $eq: ["$chatId", "$$chatId"] },
+                                { $ne: ["$senderRole", "admin"] } // Exclude admin messages
+                            ]}
+                        }},
+                        { $project: { name: 1 } }, // Project only the name field
+                        { $limit: 1 } // Take any one message if available
+                    ],
+                    as: 'userMessages'
+                }
+            },
+            
+            // Stage 3: Use the name from user messages if the current name is null
+            { $addFields: {
+                name: {
+                    $ifNull: [
+                        "$name",
+                        { $arrayElemAt: ["$userMessages.name", 0] } // Use name from user message
+                    ]
+                }
+            }},
+            
+            // Stage 4: Final sort by the latest message
+            { $sort: { createdAt: -1 } }
         ]).exec();
-
         res.json(activeChats);
     } catch (error) {
         console.error('Error fetching active chats:', error);
         res.status(500).send('Server Error');
     }
 });
+
+
+
+
+
+// app.get('/api/active-chats', async (req, res) => {
+//     try {
+//         const activeChats = await Message.aggregate([
+//             { $sort: { createdAt: -1 } },  // Sort by the latest message
+//             { $group: {
+//                 _id: "$chatId",
+//                 lastMessage: { $first: "$message" },
+//                 senderId: { $first: "$senderId" },
+//                 senderRole: { $first: "$senderRole" },
+//                 createdAt: { $first: "$createdAt" } 
+//             }}
+//         ]).exec();
+//         console.log(activeChats, 'active chats')
+//         res.json(activeChats);
+//     } catch (error) {
+//         console.error('Error fetching active chats:', error);
+//         res.status(500).send('Server Error');
+//     }
+// });
 
 
 // Create server and initialize Socket.IO
@@ -56,23 +111,18 @@ const io = socketIo(server, {
 
 app.set('socketio', io);
 
-
 io.on('connection', (socket) => {
     console.log('New client connected');
 
-    // When the user joins the chat based on their email from localStorage
     socket.on('joinChat', async (email) => {
         try {
-            console.log(email, 'emaillll')
-            // Check if the user already has a chat form in the database based on email
             let chatForm = await ChatForm.findOne({ email });
             const chatId = chatForm.chatId;
             socket.join(chatId);
-            console.log(`Client with email ${email} joined chat: ${chatId}`);
 
-            // Fetch previous messages for this chatId
             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
             socket.emit('chatHistory', messages);
+            io.to('admin-room').emit('newChatCreated', { chatId, chatForm });
         } catch (error) {
             console.error('Error joining chat:', error);
         }
@@ -80,17 +130,9 @@ io.on('connection', (socket) => {
 
     socket.on('joinAdminChat', async (chatId) => {
         try {
-            if (!chatId) {
-                console.log('Admin attempted to join with no chatId');
-                return;
-            }
-
             socket.join(chatId);
-            console.log(`Admin joined chat: ${chatId}`);
-
-            // Fetch previous messages for this chatId
             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
-            socket.emit('chatHistory', messages);  // Send chat history to the admin
+            socket.emit('chatHistory', messages);
         } catch (error) {
             console.error('Error joining admin chat:', error);
         }
@@ -99,17 +141,18 @@ io.on('connection', (socket) => {
     // Handling message sending
     socket.on('sendMessage', async (data) => {
         const { chatId, senderId, senderRole, message, name } = data;
-
+        io.emit('newChatFormUserCreated', {
+            message: `New Chat Message`
+        });
         try {
-            // Save the message along with the chatId and sender's name
             const newMessage = new Message({ chatId, senderId, senderRole, message, name });
             await newMessage.save();
 
             // Emit the message to all clients in the same chat room
             io.to(chatId).emit('receiveMessage', newMessage);
-
-            // Optionally, notify admin or other users (you can customize this)
-            io.emit('newMessageNotification', {
+            
+            // Notify admin in the 'admin-room' of the new message
+            io.to('admin-room').emit('newMessageNotification', {
                 messageChat: `New message from ${name}`,
             });
         } catch (error) {
@@ -123,52 +166,82 @@ io.on('connection', (socket) => {
 });
 
 
+
+
+
 // io.on('connection', (socket) => {
 //     console.log('New client connected');
 
-//     socket.on('joinChat', async (chatId) => {
-//         socket.join(chatId);
-//         console.log(`Client joined chat: ${chatId}`);
-
-//         // Fetch previous messages from the database
+//     // User joins the chat by email
+//     socket.on('joinChat', async (email) => {
 //         try {
+//             // Find chat form by user email
+//             let chatForm = await ChatForm.findOne({ email });
+//             if (!chatForm) {
+//                 return socket.emit('error', 'Chat form not found');
+//             }
+//             const chatId = chatForm.chatId;
+
+//             // User joins the chat room
+//             socket.join(chatId);
+
+//             // Fetch and emit chat history to the user
 //             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
 //             socket.emit('chatHistory', messages);
+
+//             // Notify the admin room about the new chat
+//             io.to('admin-room').emit('newChatCreated', { chatId, chatForm });
 //         } catch (error) {
-//             console.error('Error fetching chat history:', error);
+//             console.error('Error joining chat:', error);
+//             socket.emit('error', 'Error joining chat');
 //         }
 //     });
 
+//     // Admin joins a specific chat by chatId
+//     socket.on('joinAdminChat', async (chatId, callback) => {
+//         try {
+//             // Admin joins the specific chat room
+//             socket.join(chatId);
+
+//             // Fetch and send chat history to the admin
+//             const messages = await Message.find({ chatId }).sort({ createdAt: 1 }).exec();
+//             socket.emit('chatHistory', messages);
+
+//             // Acknowledge to the frontend that the admin has successfully joined
+//             if (callback) callback('joined');
+//         } catch (error) {
+//             console.error('Error joining admin chat:', error);
+//             if (callback) callback('error');
+//         }
+//     });
+
+//     // Handle message sending
 //     socket.on('sendMessage', async (data) => {
 //         const { chatId, senderId, senderRole, message, name } = data;
 
-//         console.log('Received sendMessage event:', data);
-
 //         try {
-//             // Save the message along with the sender's name
+//             // Create and save the new message
 //             const newMessage = new Message({ chatId, senderId, senderRole, message, name });
 //             await newMessage.save();
 
-//             console.log('Message saved to MongoDB:', newMessage);
-
-//             // Emit the message to all clients in the chat room, including the name
+//             // Emit the message to all clients in the chat room
 //             io.to(chatId).emit('receiveMessage', newMessage);
-//             console.log('Message emitted to chat:', chatId);
-//             io.emit('newMessageNotification', {
-//                 // message: `New message from ${name}: "${message}"`,
+            
+//             // Notify admin in the 'admin-room' of the new message
+//             io.to('admin-room').emit('newMessageNotification', {
 //                 messageChat: `New message from ${name}`,
 //             });
 //         } catch (error) {
-//             console.error('Error saving message or emitting event:', error);
+//             console.error('Error sending message:', error);
+//             socket.emit('error', 'Error sending message');
 //         }
 //     });
 
+//     // Handle user disconnection
 //     socket.on('disconnect', () => {
 //         console.log('Client disconnected');
 //     });
 // });
-
-
 
 
 

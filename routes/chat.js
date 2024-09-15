@@ -62,7 +62,6 @@ router.post('/save-chat-form', async (req, res) => {
 
         // Generate chatId based on the email if it's not provided in the request
         const chatId = `${email}`; // This generates a unique chatId based on the user's email
-        console.log(chatId, 'Generated chatId');
 
         // Check if the form data is valid
         if (!firstName || !lastName || !phoneNumber || !email) {
