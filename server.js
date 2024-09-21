@@ -18,10 +18,10 @@ connectDB();
 app.use(cors({ origin: '*' }));
 app.use(express.json({ extended: false }));
 
-app.use('/', async (req, res) => {
-    res.json('Dvm Backend Server is Working');
-}
-)
+// app.use('/', async (req, res) => {
+//     res.json('Dvm Backend Server is Working');
+// }
+// )
 // Define Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/chat' , require('./routes/chat'));
