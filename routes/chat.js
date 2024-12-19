@@ -46,36 +46,9 @@ router.post('/saveboothistory', async (req, res) => {
 
 
 
-router.get('/getboothistory', async (req, res) => {
-    try {
-        const boothHistories = await Booth.find().sort({ timestamp: -1 });
-        res.status(200).json(boothHistories);
-    } catch (error) {
-        console.error('Error fetching booth history:', error);
-        res.status(500).json({ msg: 'Internal server error' });
-    }
-});
+
 router.post('/save-chat-form', async (req, res) => {
-    try {
-        const io = req.app.get('socketio');
-        const { firstName, lastName, phoneNumber, email } = req.body;
-
-        // Generate chatId based on the email if it's not provided in the request
-        const chatId = `${email}`; // This generates a unique chatId based on the user's email
-
-        // Check if the form data is valid
-        if (!firstName || !lastName || !phoneNumber || !email) {
-            return res.status(400).json({ message: 'All fields are required' });
-        }
-
-        // Save the form data along with the generated chatId
-        const newChatForm = new ChatForm({ firstName, lastName, phoneNumber, email, chatId });
-        await newChatForm.save();
-
-        // Emit a notification to the socket
-        io.emit('newChatFormNotification', {
-            message: `New Chat form submitted by ${firstName}`
-        });
+   
 
         // Respond with the generated chatId so the frontend can use it
         res.status(200).json({ message: 'Chat form information saved successfully', chatId });
